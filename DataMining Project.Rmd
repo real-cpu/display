@@ -1,0 +1,857 @@
+---
+title: "Project Group 17 Project 3"
+author: "Sujana Daniel Christopher"
+date: "2024-12-09"
+output: html_document
+---
+## Load Necessary Libraries
+```{r}
+library("tidyverse")
+library("ggplot2")
+library("ggrepel")
+library("ggcorrplot")
+library("DT")
+library(dplyr)
+library(skimr)
+
+```
+
+## 1. Data Understanding
+### 1.1 Load the Datasets
+
+```{r}
+# loading COVID-19_cases_plus_census dataset
+census_data <- read.csv("/Users/sujanad/Downloads/COVID-19 2/COVID-19_cases_plus_census.csv")
+
+# loading COVID-19_cases_TX dataset
+TX_cases_data <- read.csv("/Users/sujanad/Downloads/COVID-19 2/COVID-19_cases_TX.csv")
+
+#loading Global_Mobility_Report
+Mobility_data <- read.csv("/Users/sujanad/Downloads/COVID-19 2/Global_Mobility_Report.csv")
+
+```
+
+
+### 1.2 Inspect the Structure of Each Dataset
+Understanding the dataset structure which helps in identify data types and potential issues.
+```{r echo=TRUE, paged.print=TRUE}
+# Inspecting census dataset
+str(census_data)
+glimpse(census_data)
+
+# Inspecting Texas cases dataset
+str(TX_cases_data)
+glimpse(TX_cases_data)
+
+# Inspecting Mobility Report dataset
+str(Mobility_data)
+glimpse(Mobility_data)
+
+```
+
+### 1.3 Summary Statistics
+Understanding the distribution of numerical variables and the frequency of categorical variables using summary
+
+#### A. Census Dataset summary
+```{r}
+skim_summary1 <- skim(census_data)
+print(skim_summary1)
+
+```
+```{r}
+# Summary for Numerical Variables
+numerical_vars1 <- census_data %>% select_if(is.numeric)
+summary(numerical_vars1)
+
+```
+```{r}
+# Getting the names of categorical variables
+categorical_vars1 <- census_data %>% select_if(is.character) %>% names()
+
+# Looping through each categorical variable
+for (var in categorical_vars1) {
+  cat("\nFrequency Table for", var, ":\n")
+  freq_table <- table(census_data[[var]], useNA = "ifany") %>% as.data.frame()
+  freq_table <- freq_table %>% as_tibble() %>% 
+    rename(Category = Var1, Frequency = Freq)
+  print(freq_table)
+  cat("\n")
+}
+
+```
+
+#### B. covid 19 TX Dataset summary
+```{r}
+skim_summary2 <- skim(TX_cases_data)
+print(skim_summary2)
+
+```
+
+```{r}
+# Summary for Numerical Variables
+numerical_vars2 <- TX_cases_data %>% select_if(is.numeric)
+summary(numerical_vars2)
+
+```
+
+```{r}
+# Getting the names of categorical variables
+categorical_vars2 <- TX_cases_data %>% select_if(is.character) %>% names()
+
+# Looping through each categorical variable
+for (var in categorical_vars2) {
+  cat("\nFrequency Table for", var, ":\n")
+  freq_table <- table(TX_cases_data[[var]], useNA = "ifany") %>% as.data.frame()
+  freq_table <- freq_table %>% as_tibble() %>% 
+    rename(Category = Var1, Frequency = Freq)
+  print(freq_table)
+  cat("\n")
+}
+
+```
+
+#### C. Mobility Report Dataset summary
+```{r}
+skim_summary3 <- skim(Mobility_data)
+print(skim_summary3)
+
+```
+
+```{r}
+# Summary for Numerical Variables
+numerical_vars3 <- Mobility_data %>% select_if(is.numeric)
+summary(numerical_vars3)
+
+```
+
+```{r}
+# Getting the names of categorical variables
+categorical_vars3 <- Mobility_data %>% select_if(is.character) %>% names()
+
+# Looping through each categorical variable
+for (var in categorical_vars3) {
+  cat("\nFrequency Table for", var, ":\n")
+  freq_table <- table(Mobility_data[[var]], useNA = "ifany") %>% as.data.frame()
+  freq_table <- freq_table %>% as_tibble() %>% 
+    rename(Category = Var1, Frequency = Freq)
+  print(freq_table)
+  cat("\n")
+}
+
+```
+
+### 2. Data Quality
+#### 2.1 Missing Values
+Checking for missing values in the dataset
+```{r}
+# Automating the missing values handling using function
+
+handle_missing_values <- function(data, threshold = 0.5) {
+  
+  # 1. Calculating the percentage of missing data
+  missing_percent <- colMeans(is.na(data))
+  
+  # 2. Identify columns to remove based on threshold limit
+  cols_to_remove <- names(missing_percent[missing_percent > threshold])
+  
+  # Removing the columns
+  if(length(cols_to_remove) > 0){
+    cat("Removing columns with more than", threshold*100, "% missing values:\n")
+    print(cols_to_remove)
+    data <- data %>% select(-all_of(cols_to_remove))
+  } else {
+    cat("No columns exceed the missingness threshold.\n")
+  }
+  
+  # 3. Identifying remaining columns with missing values
+  cols_with_na <- names(missing_percent[missing_percent > 0 & missing_percent <= threshold])
+  
+  if(length(cols_with_na) > 0){
+    cat("\nImputing missing values for the following columns:\n")
+    print(cols_with_na)
+    
+    # Separate numerical and categorical columns
+    numerical_cols <- data %>% select(all_of(cols_with_na)) %>% select_if(is.numeric) %>% names()
+    categorical_cols <- data %>% select(all_of(cols_with_na)) %>% select_if(~ is.character(.) | is.factor(.)) %>% names()
+    
+    # Impute numerical columns with median
+    if(length(numerical_cols) > 0){
+      for(col in numerical_cols){
+        median_value <- median(data[[col]], na.rm = TRUE)
+        data[[col]][is.na(data[[col]])] <- median_value
+        cat("Imputed", col, "with median value:", median_value, "\n")
+      }
+    }
+    
+    # Impute categorical columns with mode
+    if(length(categorical_cols) > 0){
+      for(col in categorical_cols){
+        mode_value <- names(sort(table(data[[col]]), decreasing = TRUE))[1]
+        data[[col]][is.na(data[[col]])] <- mode_value
+        cat("Imputed", col, "with mode value:", mode_value, "\n")
+      }
+    }
+    
+  } else {
+    cat("\nNo remaining columns have missing values to impute.\n")
+  }
+  
+  return(data)
+}
+
+# Function to summarize missing values in a dataset
+missing_summary <- function(dataset) {
+  missing_data <- colSums(is.na(dataset))
+  # Convert the result to a tibble for better presentation
+  missing_data_tibble <- tibble(Column = names(missing_data), MissingValues = missing_data)
+  # Return the formatted tibble
+  return(missing_data_tibble)
+}
+```
+
+```{r}
+# Checking the missing data for census dataset
+dataset1_clean <- handle_missing_values(census_data, threshold = 0.5)
+
+```
+```{r}
+# Summary of the missing data after removing and imputing
+missing_summary(dataset1_clean)
+
+```
+```{r}
+# Checking the missing data for TX Cases dataset
+dataset2_clean <- handle_missing_values(TX_cases_data, threshold = 0.5)
+
+```
+
+```{r}
+# Summary of the missing data after removing and imputing
+missing_summary(dataset2_clean)
+
+```
+# c
+```{r}
+# Checking the missing data for Mobility dataset
+dataset3_clean <- handle_missing_values(Mobility_data, threshold = 0.5)
+
+```
+
+```{r}
+# Summary of the missing data after removing and imputing
+missing_summary(dataset3_clean)
+
+```
+
+### 2.2 Remove Duplicate Data
+To ensure there are no duplicate records.
+```{r}
+# Function to remove duplicates
+remove_duplicates <- function(data) {
+  initial_rows <- nrow(data)
+  data_clean <- data %>% distinct()
+  final_rows <- nrow(data_clean)
+  
+  cat("Removed", initial_rows - final_rows, "duplicate rows.\n")
+  return(data_clean)
+}
+
+```
+
+```{r}
+dataset1_clean <- remove_duplicates(dataset1_clean)
+dataset2_clean <- remove_duplicates(dataset2_clean)
+dataset3_clean <- remove_duplicates(dataset3_clean)
+```
+### 2.3 Handling Outliers
+Outliers can significantly impact analysis and modeling.So we are 
+
+```{r}
+# Define the outlier capping function
+cap_outliers <- function(x, lower_p = 0.01, upper_p = 0.99) {
+  if(is.numeric(x)) {
+    quantiles <- quantile(x, probs = c(lower_p, upper_p), na.rm = TRUE)
+    x <- ifelse(x < quantiles[1], quantiles[1],
+               ifelse(x > quantiles[2], quantiles[2], x))
+  }
+  return(x)
+}
+
+```
+
+```{r}
+# List of datasets and their names
+datasets <- list(dataset1_clean, dataset2_clean, dataset3_clean)
+dataset_names <- c("dataset1", "dataset2", "dataset3")
+
+# Loop through each dataset and apply capping
+for(i in seq_along(datasets)) {
+  cat("Capping outliers in", dataset_names[i], "...\n")
+  
+  # Identify numerical columns
+  numerical_cols <- datasets[[i]] %>% select(where(is.numeric)) %>% names()
+  
+  # Apply capping to numerical columns
+  datasets[[i]] <- datasets[[i]] %>%
+    mutate(across(all_of(numerical_cols), ~ cap_outliers(.x, 0.01, 0.99)))
+  
+  cat("Outliers capped for", dataset_names[i], "\n\n")
+}
+
+# Overwrite the original datasets with the cleaned data
+dataset1 <- datasets[[1]]
+dataset2 <- datasets[[2]]
+dataset3 <- datasets[[3]]
+
+```
+
+### 2.4 Calculate Statistics for Each numeric variables in Dataset
+```{r}
+# Load necessary libraries
+library(dplyr)
+
+# Function to calculate statistics and provide descriptions
+calculate_statistics <- function(data, dataset_name) {
+  # Select only numeric columns from the dataset
+  numeric_data <- data %>% select(where(is.numeric))
+  
+  # Check if there are any numeric columns to analyze
+  if (ncol(numeric_data) == 0) {
+    cat("No numeric columns found in", dataset_name, "\n")
+    return(NULL)
+  }
+  
+  # Define a function to compute statistics for each numeric variable
+  stats_list <- lapply(names(numeric_data), function(var) {
+    mean_val <- mean(numeric_data[[var]], na.rm = TRUE)
+    median_val <- median(numeric_data[[var]], na.rm = TRUE)
+    variance_val <- var(numeric_data[[var]], na.rm = TRUE)
+    range_val <- range(numeric_data[[var]], na.rm = TRUE)
+    mode_val <- as.numeric(names(sort(table(numeric_data[[var]]), decreasing = TRUE)[1]))
+    
+    # Combine the statistics into a named vector
+    c(Mean = mean_val, Median = median_val, Variance = variance_val, 
+      Range = paste(range_val, collapse = " to "), Mode = mode_val)
+  })
+  
+  # Convert list to data frame
+  stats_df <- as.data.frame(do.call(rbind, stats_list), stringsAsFactors = FALSE)
+  stats_df <- cbind(Variable = names(numeric_data), stats_df)
+  
+  # Print statistics
+  cat("\nStatistics for", dataset_name, "\n")
+  print(stats_df)
+  
+  # Descriptive Comments
+  for (var in names(numeric_data)) {
+    cat("\nVariable:", var, "\n")
+    cat("Mean:", mean(numeric_data[[var]], na.rm = TRUE), "\n")
+    cat("Median:", median(numeric_data[[var]], na.rm = TRUE), "\n")
+    cat("Variance:", var(numeric_data[[var]], na.rm = TRUE), "\n")
+    cat("Range:", range(numeric_data[[var]], na.rm = TRUE), "\n")
+    cat("Mode:", as.numeric(names(sort(table(numeric_data[[var]]), decreasing = TRUE)[1])), "\n")
+    
+    # Add comments based on the variable
+    if (var == "total_population") {  # Example variable
+      cat("Interesting Insight: The population mean indicates the average size of a county. High variance may suggest a mix of urban and rural areas.\n")
+    } else if (var == "median_income") {  # Example variable
+      cat("Interesting Insight: The income statistics can reveal economic disparities among counties.\n")
+    }
+    # Add more specific insights as needed based on your dataset
+  }
+}
+
+# Analyze each cleaned dataset
+calculate_statistics(dataset1, "Dataset 1 (Census Dataset)")
+calculate_statistics(dataset2, "Dataset 2 (TX Cases Dataset)")
+calculate_statistics(dataset3, "Dataset 3 (Mobility Dataset)")
+
+```
+
+### 2.5 Integrated Dataset
+```{r}
+library(dplyr)
+
+# Select required columns from each dataset
+census_data <- dataset1 %>%
+  select(
+    county_name,
+    total_population = total_pop,  # Renamed for clarity
+    median_income
+  )
+
+covid_cases_data <- dataset2 %>%
+  select(
+    county_name,
+    report_date = date,  # Renamed for clarity
+    total_cases = confirmed_cases,
+    total_deaths = deaths
+  )
+
+mobility_data <- dataset3 %>%
+  select(
+    county_name = sub_region_1,  # Ensure consistency with other datasets
+    retail_change = retail_and_recreation_percent_change_from_baseline,
+    grocery_change = grocery_and_pharmacy_percent_change_from_baseline,
+    transit_change = transit_stations_percent_change_from_baseline,
+    workplace_change = workplaces_percent_change_from_baseline
+  )
+
+# Combine the datasets
+combined_data <- census_data %>%
+  left_join(covid_cases_data, by = "county_name") %>%
+  left_join(mobility_data, by = "county_name") %>%
+  group_by(county_name) %>%
+  summarise(
+    total_population = first(total_population),  # Use the first entry for population
+    median_income = first(median_income),  # Use the first entry for income
+    total_cases = sum(total_cases, na.rm = TRUE),  # Aggregate total cases
+    total_deaths = sum(total_deaths, na.rm = TRUE),  # Aggregate total deaths
+    latest_report_date = max(report_date, na.rm = TRUE),  # Latest date for each county
+    avg_retail_change = mean(retail_change, na.rm = TRUE),  # Average retail activity change
+    avg_grocery_change = mean(grocery_change, na.rm = TRUE),  # Average grocery activity change
+    avg_transit_change = mean(transit_change, na.rm = TRUE),  # Average transit activity change
+    avg_workplace_change = mean(workplace_change, na.rm = TRUE)  # Average workplace activity change
+  ) %>%
+  ungroup()
+
+# Inspect the combined dataset
+glimpse(combined_data)
+
+# Get the first 10 rows for review
+first_10_rows <- combined_data %>% 
+  slice(1:10)
+
+# View the first 10 rows
+print(first_10_rows)
+
+```
+### 2.6 Data Quality - Identifying Missing Values in Combined Data
+```{r}
+# Check for missing values
+colSums(is.na(combined_data))
+
+# Impute missing values for numeric and categorical columns
+combined_data <- combined_data %>%
+  mutate(
+    across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .)),  # Impute numeric columns with median
+    across(where(is.character), ~ ifelse(is.na(.), "Unknown", .))              # Impute categorical columns with "Unknown"
+  )
+```
+### 2.7 Checking for Outliers
+```{r}
+cap_outliers <- function(x, lower_p = 0.01, upper_p = 0.99) {
+  if (is.numeric(x)) {
+    # Calculate quantiles
+    quantiles <- quantile(x, probs = c(lower_p, upper_p), na.rm = TRUE)
+    # Cap outliers
+    x <- ifelse(x < quantiles[1], quantiles[1],
+                ifelse(x > quantiles[2], quantiles[2], x))
+  }
+  return(x)
+}
+
+# Apply capping to numeric columns
+combined_data <- combined_data %>%
+  mutate(across(where(is.numeric), cap_outliers))
+
+```
+
+### 2.8 Imputing the missing Values
+```{r}
+# Impute missing values for mobility change columns with the median
+combined_data <- combined_data %>%
+  mutate(
+    avg_retail_change = ifelse(is.na(avg_retail_change), median(avg_retail_change, na.rm = TRUE), avg_retail_change),
+    avg_grocery_change = ifelse(is.na(avg_grocery_change), median(avg_grocery_change, na.rm = TRUE), avg_grocery_change),
+    avg_transit_change = ifelse(is.na(avg_transit_change), median(avg_transit_change, na.rm = TRUE), avg_transit_change),
+    avg_workplace_change = ifelse(is.na(avg_workplace_change), median(avg_workplace_change, na.rm = TRUE), avg_workplace_change)
+  )
+
+# Impute missing values in the latest_report_date with the most recent date
+combined_data <- combined_data %>%
+  mutate(
+    latest_report_date = ifelse(is.na(latest_report_date),
+                                max(latest_report_date, na.rm = TRUE),
+                                latest_report_date)
+  )
+```
+
+```{r}
+# Check for remaining missing values
+colSums(is.na(combined_data))
+```
+
+### 2.7 Defining the risk Level
+
+```{r}
+# Ensure total_population is not zero
+combined_data <- combined_data %>%
+  mutate(
+    total_population = ifelse(total_population == 0 | is.na(total_population), 
+                              median(total_population, na.rm = TRUE), 
+                              total_population)
+  )
+
+# Recalculate cases_per_100 and deaths_per_100
+combined_data <- combined_data %>%
+  mutate(
+    cases_per_100 = (total_cases / total_population) * 100,
+    deaths_per_100 = (total_deaths / total_population) * 100
+  )
+
+# Reassign risk_level based on corrected cases_per_100
+combined_data <- combined_data %>%
+  mutate(
+    risk_level = case_when(
+      cases_per_100 < 1 ~ "low",
+      cases_per_100 < 1000 ~ "medium",
+      TRUE ~ "high"
+    )
+  )
+```
+
+```{r}
+# Confirm no missing values in risk_level
+sum(is.na(combined_data$risk_level))
+
+# Optional: View the distribution of risk_level
+table(combined_data$risk_level)
+```
+```{r}
+library(ggplot2)
+
+# Plot the distribution of risk levels
+ggplot(combined_data, aes(x = risk_level, fill = risk_level)) +
+  geom_bar() +
+  theme_minimal() +
+  labs(
+    title = "Distribution of Risk Levels",
+    x = "Risk Level",
+    y = "Number of Counties"
+  )
+```
+
+## 3 Modeling
+### 3.1 Splitting the dataset
+```{r}
+library(caret)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Split into training (70%) and testing (30%)
+train_index <- createDataPartition(combined_data$risk_level, p = 0.7, list = FALSE)
+train_data <- combined_data[train_index, ]
+test_data <- combined_data[-train_index, ]
+
+```
+
+## 3.2 Decision Tree with Cross-Validation
+```{r}
+library(rpart)
+library(rpart.plot)
+
+# Train a decision tree
+tree_model <- rpart(risk_level ~ total_population + median_income + cases_per_100 +
+                    avg_retail_change + avg_grocery_change + avg_transit_change + avg_workplace_change,
+                    data = train_data, method = "class")
+
+# Visualize the tree
+rpart.plot(tree_model)
+```
+
+```{r}
+# Exclude county_name from training and testing data
+train_data <- train_data %>% select(-county_name)
+test_data <- test_data %>% select(-county_name)
+```
+
+```{r}
+library(caret)
+
+# Define cross-validation controls
+cv_control <- trainControl(method = "cv", number = 10)  # 10-fold cross-validation
+
+# Train the decision tree
+tree_cv_model <- train(
+  risk_level ~ ., 
+  data = train_data, 
+  method = "rpart", 
+  trControl = cv_control
+)
+
+# Print cross-validation results
+print(tree_cv_model)
+
+# Predict on the test set
+tree_cv_predictions <- predict(tree_cv_model, newdata = test_data)
+
+
+# Ensure test_data$risk_level is a factor
+test_data$risk_level <- factor(test_data$risk_level, levels = c("low", "medium", "high"))
+
+# Ensure tree_predictions is a factor with the same levels
+tree_cv_predictions <- factor(tree_cv_predictions, levels = c("low", "medium", "high"))
+
+
+# Evaluate the model
+confusionMatrix(tree_cv_predictions, test_data$risk_level)
+
+```
+
+### 3.3 Random Forest with Cross-Validation
+
+```{r}
+# Perform cross-validation for random forest
+rf_cv_model <- train(
+  risk_level ~ ., 
+  data = train_data, 
+  method = "rf", 
+  trControl = cv_control,
+  ntree = 100
+)
+
+# Print the cross-validated results
+print(rf_cv_model)
+
+# Predict on test set
+rf_cv_predictions <- predict(rf_cv_model, newdata = test_data)
+
+# Evaluate the cross-validated random forest model
+confusionMatrix(rf_cv_predictions, test_data$risk_level)
+```
+
+```{r}
+# Get feature importance from caret model
+importance_caret <- varImp(rf_cv_model)
+
+# Convert to a dataframe
+importance_df <- data.frame(
+  Feature = rownames(importance_caret$importance),
+  Importance = importance_caret$importance[, 1]
+)
+
+# Visualize feature importance
+ggplot(importance_df, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Feature Importance in Cross-Validated Random Forest", x = "Feature", y = "Importance")
+
+```
+
+### 3.4  Multinomial Logistic Regression
+
+```{r}
+library(nnet)
+
+# Train multinomial logistic regression
+multi_log_model <- multinom(risk_level ~ ., data = train_data)
+
+# Predict on the test set
+multi_log_predictions <- predict(multi_log_model, newdata = test_data)
+
+# Evaluate the model
+library(caret)
+confusionMatrix(multi_log_predictions, test_data$risk_level)
+
+```
+```{r}
+# Generate confusion matrix
+library(caret)
+conf_matrix <- confusionMatrix(multi_log_predictions, test_data$risk_level)
+
+# Convert confusion matrix to a dataframe
+conf_df <- as.data.frame(conf_matrix$table)
+
+# Plot heatmap
+library(ggplot2)
+ggplot(conf_df, aes(x = Prediction, y = Reference, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  theme_minimal() +
+  labs(
+    title = "Confusion Matrix Heatmap for Multinomial Logistic Regression",
+    x = "Predicted",
+    y = "Actual"
+  )
+```
+
+### 3.5 Cross-Validation with Multinomial Logistic Regression
+
+```{r}
+# Define cross-validation method
+cv_control <- trainControl(method = "cv", number = 10)
+
+# Train multinomial logistic regression using caret
+multi_log_cv_model <- train(
+  risk_level ~ ., 
+  data = train_data, 
+  method = "multinom", 
+  trControl = cv_control,
+  trace = FALSE
+)
+
+# Print the cross-validation results
+print(multi_log_cv_model)
+
+# Predict on the test set
+multi_log_cv_predictions <- predict(multi_log_cv_model, newdata = test_data)
+
+# Evaluate the model
+confusionMatrix(multi_log_cv_predictions, test_data$risk_level)
+
+
+```
+
+```{r}
+library(ggplot2)
+
+# Extract results from cross-validation
+cv_results <- multi_log_cv_model$results
+
+# Plot the cross-validation accuracy for each fold
+ggplot(cv_results, aes(x = rownames(cv_results), y = Accuracy)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  theme_minimal() +
+  labs(
+    title = "Cross-Validation Accuracy per Fold",
+    x = "Fold",
+    y = "Accuracy"
+  ) +
+  geom_text(aes(label = round(Accuracy, 3)), vjust = -0.5, size = 3.5)
+```
+
+### Comparison of Models with Cross-Validation
+
+```{r}
+# Compile cross-validation results into a summary table
+cv_results <- data.frame(
+  Model = c("Decision Tree", "Random Forest", "Logistic Regression"),
+  Cross_Val_Accuracy = c(
+    max(tree_cv_model$results$Accuracy),  # Max accuracy from CV
+    max(rf_cv_model$results$Accuracy),
+    max(multi_log_cv_model$results$Accuracy)
+  )
+)
+
+print(cv_results)
+
+# Sujana
+
+library(caret)
+
+set.seed(123)
+
+# Split the data
+train_index <- createDataPartition(combined_data$risk_level, p = 0.7, list = FALSE)
+train_data <- combined_data[train_index, ]
+test_data <- combined_data[-train_index, ]
+
+# Drop unnecessary columns
+train_data <- train_data %>% select(-county_name)
+test_data <- test_data %>% select(-county_name)
+
+# Convert string columns to factors
+train_data <- train_data %>% mutate(across(where(is.character), as.factor))
+test_data <- test_data %>% mutate(across(where(is.character), as.factor))
+
+# CART Model
+library(rpart)
+library(rpart.plot)
+
+# Train the CART model
+cart_model <- rpart(risk_level ~ ., data = train_data, method = "class")
+
+# Plot the decision tree
+rpart.plot(cart_model)
+
+# Predict on the test set
+cart_pred <- predict(cart_model, test_data, type = "class")
+
+# Evaluate the model
+cart_cm <- confusionMatrix(cart_pred, test_data$risk_level)
+print("CART Confusion Matrix")
+print(cart_cm)
+
+# Cross-Validation for CART
+cv_control <- trainControl(method = "cv", number = 10)
+cv_cart <- train(
+  risk_level ~ ., 
+  data = train_data, 
+  method = "rpart", 
+  trControl = cv_control
+)
+
+# Display CART cross-validation results
+print(cv_cart)
+
+# Extract maximum accuracy from CART cross-validation results
+cart_accuracy <- max(cv_cart$results$Accuracy)
+print(paste("CART Accuracy (Cross-Validation):", round(cart_accuracy * 100, 2), "%"))
+
+# ANN Model
+library(nnet)
+
+# Normalize the data
+preProcValues <- preProcess(train_data, method = c("center", "scale"))
+train_data_norm <- predict(preProcValues, train_data)
+test_data_norm <- predict(preProcValues, test_data)
+
+# Preserve the target variable as a factor
+train_data_norm$risk_level <- train_data$risk_level
+test_data_norm$risk_level <- test_data$risk_level
+
+# Train the ANN model
+ann_model <- nnet(risk_level ~ ., data = train_data_norm, size = 5, decay = 0.01, maxit = 200)
+
+# Predict on the test set
+ann_pred <- predict(ann_model, test_data_norm, type = "class")
+
+# Convert predictions to factors with aligned levels
+ann_pred <- factor(ann_pred, levels = levels(test_data_norm$risk_level))
+
+ann_cm <- confusionMatrix(ann_pred, test_data_norm$risk_level)
+print("ANN Confusion Matrix")
+print(ann_cm)
+
+# Cross-Validation for ANN
+cv_ann <- train(
+  risk_level ~ ., 
+  data = train_data_norm, 
+  method = "nnet", 
+  tuneGrid = expand.grid(size = c(5, 10), decay = c(0.01, 0.1)), 
+  trControl = cv_control, 
+  trace = FALSE
+)
+
+# Display ANN cross-validation results
+print(cv_ann)
+
+# Extract maximum accuracy from ANN cross-validation results
+ann_accuracy <- max(cv_ann$results$Accuracy)
+print(paste("ANN Accuracy (Cross-Validation):", round(ann_accuracy * 100, 2), "%"))
+
+# Comparing CART and ANN
+cv_results <- data.frame(
+  Model = c("CART", "ANN"),
+  Accuracy = c(cart_accuracy, ann_accuracy)
+)
+
+# Plot the cross-validation accuracy comparison
+library(ggplot2)
+ggplot(cv_results, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(
+    title = "Comparison of CART and ANN with Cross-Validation",
+    x = "Model",
+    y = "Accuracy",
+    fill = "Model"
+  ) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
